@@ -1,0 +1,276 @@
+---
+title: 'Argoid Analytics Assignment 2'
+output: html_notebook
+---
+<b><h2>Reading the datafile
+
+```{r}
+transaction_data <- read.csv("C:/Users/sifat/Desktop/transaction_data.csv")
+View(transaction_data)
+data <- transaction_data
+
+```
+
+Exploratory data analysis</h2></b>
+
+```{r}
+glimpse(data)
+
+```
+
+<h4>Modifying the TranscationTime column for better analysis
+```{r}
+library(tidyr)
+library(dplyr)
+data <- data %>% separate(TransactionTime, c('week','month', 'date', 'hour','min','sec', 'zone','year'))
+data$TransactionTime<- paste(data$month,data$date,data$year)
+data <- data[,-c(3:10)]
+head(data)
+
+```
+
+```{r}
+summary(data)
+```
+
+The minimal value for NumberOfItemsPurchased and  CostPerItem  are negative . This could be because cancellation items transactions are captured in negative amount. So, we omitted the negative numbers.
+Also, we have suspicious values for UserId and ItemCode.
+So, we are ommiting negative values.
+```{r}
+data<-data[!(data$UserId == -1),]
+data<-data[!(data$ItemCode == -1),]
+data<-data[!(data$NumberOfItemsPurchased < 1),]
+data<-data[!(data$CostPerItem < 1),]
+summary(data)
+
+```
+
+Checking if there are NA values in any column
+```{r}
+sapply(data, function(x) any(is.na(x)))
+```
+
+```{r}
+glimpse(data)
+```
+
+Due the elemination of unserirable rows the observations came down from 1,083,818 to 682,162. 
+
+Checking the frequency tablbe for all the countries.
+
+```{r}
+table(data$Country)
+```
+The maximum orders came from United Kingdom.</h4>
+
+
+<b><h2>HYPOTHESIS BUILDING</h2></b>
+
+<h4>Restricting the data with maximum order that came from geographical unit the United Kingdom
+
+```{r}
+data = subset(data,Country == 'United Kingdom')
+length(unique(data$TransactionId))
+length(unique(data$UserId))
+```
+
+Converting the TransactionTime column in date format using anytime pacakage.
+Also, converting some other columns into factors for better analysis.
+Creating a column Total price by multiplying CostPerItem and NumberOfItemsPurchased
+```{r}
+library(anytime)
+data$Country = as.factor(data$Country)
+data$TransactionId = as.factor(data$TransactionId)
+data$ItemCode = as.factor(data$ItemCode)
+data$UserId = as.factor(data$UserId)
+data$TransactionTime = as.factor(data$TransactionTime)
+
+q <- anydate(data$TransactionTime)
+data$TransactionTime <- q
+total <- df$CostPerItem *df$NumberOfItemsPurchased
+data$Totalprice <- total
+```
+
+```{r}
+glimpse(data)
+```
+
+Analysing the dataset using RFM Technique
+
+```{r}
+library(dplyr)
+rmf = data %>% 
+  group_by(UserId) %>%
+  summarise(last_purchase = max(TransactionTime),
+            recency = as.double(difftime('2019-01-01',
+                                            as.Date(last_purchase,origin= 
+                                                      '2018-02-12 '),
+                                              units = 'day')),
+            frequency = n_distinct(TransactionId),
+            momentary = sum(Totalprice)
+            )
+head(rmf, n=20)
+
+rmf<-rmf[!(rmf$recency < 0),]
+head(rmf, n= 20)
+
+```
+
+```{r}
+glimpse(rmf)
+```
+
+```{r}
+rmf2 = rmf %>%
+      mutate(one_time = ifelse(frequency == 1 , "One-timer", "More than once"),
+             avg_per_purchase = momentary/frequency) %>%
+      group_by(one_time)
+head(rmf2, n= 30)
+
+```
+```{r}
+library(ggplot2)
+library(plotly)
+
+pl <- ggplot(rmf2 , aes(x= one_time, y=momentary))
+
+pl2 <- pl+geom_bar(stat = 'identity',fill = '#f54287', alpha= 0.95)
+
+pl3 <- pl2 + xlab('How many times')+ylab('Momentary')
+
+gpl<- ggplotly(pl3)
+
+print( gpl )
+```
+Creation of R, F, M rank
+
+```{r}
+rmf2$r = cut(rmf2$recency,5, F)
+rmf2$f = cut (rmf2$frequency, 5, F)
+rmf2$m = cut(rmf2$momentary, 5 , F)
+
+```
+
+Review top 20
+```{r}
+rmf3 = rmf2[with(rmf2, order(-r, -f, -m)),]
+head(rmf3, n=20)
+```
+
+```{r}
+groupRFM = count(rmf3, r,f,m)
+groupRFM = rmf3$r*100 +rmf3$f*10+rmf3$m
+rmf3 = data.frame(rmf3, groupRFM)
+head(rmf3)
+
+```
+Giving scored to the customers according to their RFM values
+
+```{r}
+rmf3$score <- rmf3$r+rmf3$f+rmf3$m
+countRFM = count(rmf3, score)
+countRFM
+```
+RFM scores based on the Quartile (Distribustion based)
+
+
+```{r}
+summary(rmf3$recency)
+```
+
+```{r}
+rmf3$segment_recency = 'NA'
+rmf3$segment_recency[which(rmf$recency > 191.7708)]= 'Inactive'
+rmf3$segment_recency[which(rmf3$recency > 92.7708 & rmf3$recency<= 191.7708)] <- 'Temporary idle'
+rmf3$segment_recency[which(rmf3$recency > 26.7708 & rmf3$recency<= 92.7708)] <- 'Frequent'
+rmf3$segment_recency[which(rmf3$recency<= 26.7708)] <- 'Highly Active'
+rfm3_recency = rmf3
+head(rfm3_recency)
+
+```
+
+```{r}
+customerSegmentationR = count(rmf3, segment_recency)
+customerSegmentationR
+```
+
+```{r}
+pl <- ggplot(customerSegmentationR, aes(x=segment_recency, y = n))
+
+pl2 <- pl+geom_bar(stat = 'identity',fill = '#fcba03', alpha= 0.95)
+
+pl3 <- pl2 + xlab('Customer status')+ylab('count')
+
+gpl<- ggplotly(pl3)
+
+print( gpl )
+
+```
+
+```{r}
+summary(rmf3$frequency)
+```
+
+```{r}
+rmf3$segment_frequency = 'NA'
+rmf3$segment_frequency[which(rmf$frequency <1)]= 'Potential'
+rmf3$segment_frequency[which(rmf3$frequency >=1 )] <- 'C. Returing customer'
+rmf3$segment_frequency[which(rmf3$frequency >= 2 )] <- 'B. Regular'
+rmf3$segment_frequency[which(rmf3$frequency >= 5)] <- 'A. Stellar customer'
+rfm3_frequency = rmf3
+head(rfm3_frequency, n= 20)
+```
+
+```{r}
+customerSegmentationF = count(rmf3, segment_frequency)
+customerSegmentationF
+
+```
+
+```{r}
+pl <- ggplot(customerSegmentationF, aes(x=segment_frequency, y = n))
+
+pl2 <- pl+geom_bar(stat = 'identity',fill = '#34eb43', alpha= 0.95)
+
+pl3 <- pl2 + xlab('Customer status')+ylab('count')
+
+gpl<- ggplotly(pl3)
+
+print( gpl )
+```
+
+```{r}
+summary(rmf3$momentary)
+```
+
+```{r}
+rmf3$segment_momentary = 'NA'
+rmf3$segment_momentary[which(rmf$momentary < 788)]= 'worst'
+rmf3$segment_momentary[which(rmf3$momentary >= 788 & rmf3$momentary<  1622 )] <- 'Top 75%'
+rmf3$segment_momentary[which(rmf3$momentary >=  1622 & rmf3$momentary< 3360)] <- 'Top 50%'
+rmf3$segment_momentary[which(rmf3$momentary>= 3360)] <- 'Best'
+rfm3_momentary = rmf3
+head(rfm3_momentary, n = 20)
+```
+```{r}
+customerSegmentationM= count(rmf3, segment_momentary)
+customerSegmentationM
+```
+
+```{r}
+pl <- ggplot(customerSegmentationF, aes(x=segment_frequency, y = n))
+
+pl2 <- pl+geom_bar(stat = 'identity',fill = '#ebc634', alpha= 0.95)
+
+pl3 <- pl2 + xlab('Customer status')+ylab('count')
+
+gpl<- ggplotly(pl3)
+
+print( gpl )
+```
+</h4>
+```{r}
+write.csv(rmf3, "RFMresult.csv")
+
+```
+
