@@ -1,4 +1,4 @@
-# Customer-Segmentation--Using_RFM-technique
+# Customer-Segmentation-Using-RFM-technique
 
 Customer segmentation using RFM technique
 (Recency, Frequency, and Monetary)
